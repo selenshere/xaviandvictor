@@ -286,41 +286,86 @@ document.getElementById("form").addEventListener("submit", async (e) => {
   }
 });
 
-document.getElementById("saveBtn").addEventListener("click", async () => {
+function toEnglishSlug(str) {
+  const map = {
+    "ç":"c","Ç":"c","ğ":"g","Ğ":"g","ı":"i","İ":"i",
+    "ö":"o","Ö":"o","ş":"s","Ş":"s","ü":"u","Ü":"u"
+  };
+  const replaced = String(str || "")
+    .split("")
+    .map(ch => map[ch] ?? ch)
+    .join("");
+
+  return replaced
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function fileTimestamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2,"0");
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob(
+    [JSON.stringify(data, null, 2)],
+    { type: "application/json;charset=utf-8" }
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("saveBtn").addEventListener("click", () => {
   if (!requireName()) return;
 
+  const first = firstEl.value.trim();
+  const last  = lastEl.value.trim();
+
   const payload = {
+    app: "xaviandvictor",
     sessionId,
     startedAt,
     savedAt: new Date().toISOString(),
-    user: { firstName: firstEl.value.trim(), lastName: lastEl.value.trim() },
-    messages: messages.map(m=>({ role:m.role, text:m.text, who:m.who, ts:m.ts })),
+    savedAtLocal: new Date().toLocaleString("tr-TR"),
+    user: {
+      firstName: first,
+      lastName: last
+    },
+    messages: messages.map(m => ({
+      role: m.role,
+      who: m.who || null,
+      text: m.text,
+      ts: m.ts,
+      tsLocal: new Date(m.ts).toLocaleString("tr-TR")
+    })),
     pageUrl: location.href,
     userAgent: navigator.userAgent
   };
 
-  const btn = document.getElementById("saveBtn");
-  btn.disabled = true;
-  btn.textContent = "Saving…";
+  const safeFirst = toEnglishSlug(first) || "name";
+  const safeLast  = toEnglishSlug(last) || "surname";
+  const ts = fileTimestamp();
 
-  try {
-    const res = await fetch(API + "/api/save", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json().catch(()=> ({}));
-    if (!res.ok) throw new Error(data.detail || data.error || ("HTTP " + res.status));
-    dirty = false;
-    alert("Kaydedildi ✅");
-  } catch (err) {
-    console.error(err);
-    alert("Kaydetme hatası: " + (err.message || ""));
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Save";
-  }
+  const filename = `${safeFirst}_${safeLast}_xaviandvictor.json`;
+
+  downloadJSON(filename, payload);
+  dirty = false;
+  alert("Dosya bilgisayarına indirildi ✅");
 });
+
 
 window.addEventListener("beforeunload", (e) => {
   if (!dirty) return;
