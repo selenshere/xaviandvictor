@@ -1,7 +1,6 @@
-
 {
-  "name": "xaviandvictor-backend",
-  "version": "1.0.0",
+  "name": "xaviandvictor-server",
+  "private": true,
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -10,6 +9,10 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "googleapis": "^140.0.0",
     "openai": "^4.33.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
