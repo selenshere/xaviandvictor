@@ -51,7 +51,7 @@ function getDriveClient() {
   const auth = new google.auth.JWT({
     email: sa.client_email,
     key: sa.private_key,
-    scopes: ["https://www.googleapis.com/auth/drive.file"]
+    scopes: ["https://www.googleapis.com/auth/drive"]
   });
   return google.drive({ version: "v3", auth });
 }
@@ -76,13 +76,13 @@ app.post("/api/chat", async (req, res) => {
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
-        { role: "developer", content: systemPrompt },
+        { role: "system", content: systemPrompt },
         ...messages.map(m => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: String(m.text || "")
         }))
       ],
-      temperature: 0.7
+      temperature: 0.3
     });
 
     res.json({ reply: completion.choices?.[0]?.message?.content ?? "", ts: new Date().toISOString() });
