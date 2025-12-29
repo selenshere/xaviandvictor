@@ -1,0 +1,42 @@
+
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <title>Xavi & Víctor</title>
+  <style>
+    body { font-family: sans-serif; margin: 40px; }
+    #chat { border:1px solid #ccc; padding:10px; height:300px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h2>Xavi & Víctor Chat</h2>
+  <div id="chat"></div>
+  <input id="msg" placeholder="Mesaj"/>
+  <button onclick="send()">Gönder</button>
+
+  <script>
+    const API = "https://YOUR_RENDER_URL_HERE";
+    const SYSTEM_PROMPT = `You are two 3rd-grade students, Xavi and Víctor.`;
+    const messages = [];
+
+    async function send() {
+      const text = msg.value;
+      msg.value = "";
+      messages.push({ role:"user", text });
+
+      const res = await fetch(API + "/api/chat", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ systemPrompt: SYSTEM_PROMPT, messages })
+      });
+
+      const data = await res.json();
+      messages.push({ role:"assistant", text:data.reply });
+
+      chat.innerHTML += "<p><b>You:</b> " + text + "</p>";
+      chat.innerHTML += "<p><b>Bot:</b> " + data.reply + "</p>";
+    }
+  </script>
+</body>
+</html>
