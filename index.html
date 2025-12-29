@@ -9,6 +9,8 @@
   --bg:#f6f7fb; --panel:#fff; --border:#e5e7ef; --text:#111827; --muted:#6b7280;
   --accent:#2563eb; --accentSoft:rgba(37,99,235,.12);
   --infoBg:#eff6ff; --infoBorder:#dbeafe; --infoText:#1e3a8a;
+  --xaviBg:#fff7ed; --xaviBorder:#fed7aa;
+  --victorBg:#f0fdf4; --victorBorder:#bbf7d0;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);}
@@ -33,9 +35,13 @@ input:focus{border-color:rgba(37,99,235,.5);box-shadow:0 0 0 4px var(--accentSof
 .sideBody{padding:12px;overflow:auto;}
 .sideBody img{width:100%;height:auto;border-radius:14px;border:1px solid var(--border);}
 .chat{flex:1;overflow:auto;padding:14px;background:linear-gradient(180deg, rgba(246,247,251,.6), rgba(246,247,251,0));}
-.bubble{max-width:84%;padding:10px 12px;border-radius:16px;margin:8px 0;line-height:1.35;white-space:pre-wrap;border:1px solid var(--border);background:#fff;}
+.msgRow{margin:10px 0;}
+.bubble{max-width:84%;padding:10px 12px;border-radius:16px;line-height:1.35;white-space:pre-wrap;border:1px solid var(--border);background:#fff;}
 .user{margin-left:auto;background:#eff6ff;border-color:#dbeafe;}
 .bot{margin-right:auto;}
+.xavi{background:var(--xaviBg);border-color:var(--xaviBorder);}
+.victor{background:var(--victorBg);border-color:var(--victorBorder);}
+.who{font-size:12px;font-weight:700;margin-bottom:6px;color:#111827;}
 .meta{font-size:11px;color:var(--muted);margin-top:4px;}
 .composer{display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border);background:#fff;}
 #msg{flex:1;}
@@ -57,7 +63,7 @@ input:focus{border-color:rgba(37,99,235,.5);box-shadow:0 0 0 4px var(--accentSof
   <div class="card side">
     <div class="header">
       <h3>Görev</h3>
-      <div class="instruction" id="instructionBox">
+      <div class="instruction">
         <strong>Görev:</strong> Soldaki görsele bakın. Öğretmen olarak, Xavi ve Víctor’un ¾’ü nasıl düşündüğünü ortaya çıkaracak sorular sorun ve eş parça fikrini öğretmeye çalışın.
       </div>
       <div class="small">Sayfayı kaydetmeden kapatırsanız verileriniz kaybolacaktır.</div>
@@ -70,26 +76,22 @@ input:focus{border-color:rgba(37,99,235,.5);box-shadow:0 0 0 4px var(--accentSof
   <div class="card main">
     <div class="header">
       <h3>Chatbot</h3>
-      <div class="small">Her cevapta hem Xavi hem de Víctor konuşur.</div>
+      <div class="small">Xavi ve Víctor renklerle ayrılır. Öğretmen mesajlarında isim/soyisim görünür.</div>
     </div>
 
     <div id="chat" class="chat"></div>
 
     <form class="composer" id="form">
       <input id="msg" placeholder="Mesaj yaz..." autocomplete="off">
-      <button class="btn" id="sendBtn" type="submit">Gönder</button>
+      <button class="btn" type="submit">Gönder</button>
     </form>
   </div>
 </div>
 
 <script>
-/** Render backend URL */
-const API = "https://xaviandvictor.onrender.com"; // <- Render URL
+const API = "https://xaviandvictor.onrender.com";
+const SYSTEM_PROMPT = "Persona: You are two 3rd-grade students, Xavi and V\u00edctor, who participated in a classroom activity about fractions.\nAim: Act as these two students and respond naturally to a teacher\u2019s questions about your reasoning in identifying the fraction \u00be.\nTheme: Use simple, child-like language. Keep answers short, 1\u20133 sentences.\n\nRules:\n- If the teacher message explicitly addresses ONLY one student by name (contains \u201cXavi\u201d but not \u201cV\u00edctor\u201d, OR contains \u201cV\u00edctor\u201d but not \u201cXavi\u201d), then ONLY that student answers.\n- Otherwise, include BOTH students in every assistant message: first a line starting with \"Xavi:\" then a line starting with \"V\u00edctor:\".\n- Stay in the misconception mindset at first; learn slowly only if the teacher teaches equal parts and subdividing parts.\n\nAlways label lines exactly as:\nXavi: ...\nV\u00edctor: ...";
 
-/** System prompt */
-const SYSTEM_PROMPT = "Persona: You are two 3rd-grade students, Xavi and V\u00edctor, who participated in a classroom activity about fractions.\nAim: Act as these two students and respond naturally to a teacher\u2019s questions about your reasoning in identifying the fraction \u00be in different visual representations (circle, rectangles, and discrete sets).\nRecipients: The audience is a prospective mathematics teacher (teacher candidate) who wants to overcome your misconception.\nTheme: Use simple, child-like language. Try to explain what you believe makes sense. Keep your answers short, 1\u20133 sentences. Follow your own reasoning pattern about \u00be. Show what you are thinking about the shaded and unshaded parts. Adapt to the teacher\u2019s questions but remain true to your understanding. Stay in the mindset of a 3rd grader who misunderstood that parts must be equal in size. If teacher teaches, ask questions, learn what the teacher teaches, but do not learn easily. If teacher asks your errors/misconception BEFORE teaching anything, do not give a correct answer.\nStructure:\n- Label each response with your name (Xavi: or V\u00edctor:).\n- In EVERY assistant message, include BOTH students: first a line starting with \"Xavi:\" then a line starting with \"V\u00edctor:\".\nTask context (for your role): Students must identify 3/4 among several figures. Xavi and V\u00edctor initially think any figure with 4 parts and 3 shaded is 3/4, even when parts are not equal. They incorrectly accept figures A, B, C, D as 3/4. If teacher explicitly teaches:\n1) the whole must be divided into equal parts, and\n2) a part can be subdivided into equal parts,\nthen you gradually learn (not instantly).";
-
-// ---- session id
 function getSessionId() {
   let sid = localStorage.getItem("sessionId");
   if (!sid) {
@@ -99,23 +101,31 @@ function getSessionId() {
   return sid;
 }
 const sessionId = getSessionId();
-let startedAt = localStorage.getItem("startedAt");
+
+let startedAt = sessionStorage.getItem("startedAt");
 if (!startedAt) {
   startedAt = new Date().toISOString();
-  localStorage.setItem("startedAt", startedAt);
+  sessionStorage.setItem("startedAt", startedAt);
 }
 
 const firstEl = document.getElementById("first");
 const lastEl  = document.getElementById("last");
-firstEl.value = localStorage.getItem("firstName") || "";
-lastEl.value  = localStorage.getItem("lastName") || "";
+// reset on refresh:
+firstEl.value = "";
+lastEl.value = "";
 
 let dirty = false;
-firstEl.addEventListener("input", ()=>{ localStorage.setItem("firstName", firstEl.value); dirty = true; });
-lastEl.addEventListener("input", ()=>{ localStorage.setItem("lastName", lastEl.value); dirty = true; });
+firstEl.addEventListener("input", ()=>{ dirty = true; });
+lastEl.addEventListener("input", ()=>{ dirty = true; });
 
 const chatEl = document.getElementById("chat");
-const messages = []; // {role,text,ts}
+const messages = [];
+
+function teacherName() {
+  const f = firstEl.value.trim();
+  const l = lastEl.value.trim();
+  return (f || l) ? `${f} ${l}`.trim() : "Öğretmen";
+}
 
 function requireName() {
   if (!firstEl.value.trim() || !lastEl.value.trim()) {
@@ -125,27 +135,59 @@ function requireName() {
   return true;
 }
 
+function splitStudents(text) {
+  const out = [];
+  const lines = String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const low = line.toLowerCase();
+    if (low.startsWith("xavi:")) out.push({ who:"Xavi", text: line.slice(5).trim() });
+    else if (low.startsWith("víctor:") || low.startsWith("victor:")) {
+      out.push({ who:"Víctor", text: line.split(":").slice(1).join(":").trim() });
+    }
+  }
+  return out.length ? out : [{ who:"Bot", text }];
+}
+
 function render() {
   chatEl.innerHTML = "";
   for (const m of messages) {
-    const wrap = document.createElement("div");
+    const row = document.createElement("div");
+    row.className = "msgRow";
     const bubble = document.createElement("div");
-    bubble.className = "bubble " + (m.role === "user" ? "user" : "bot");
-    bubble.textContent = m.text;
+
+    if (m.role === "user") {
+      bubble.className = "bubble user";
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = m.who || "Öğretmen";
+      const body = document.createElement("div");
+      body.textContent = m.text;
+      bubble.appendChild(who);
+      bubble.appendChild(body);
+    } else {
+      bubble.className = "bubble bot " + (m.who === "Xavi" ? "xavi" : (m.who === "Víctor" ? "victor" : ""));
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = m.who || "Asistan";
+      const body = document.createElement("div");
+      body.textContent = m.text;
+      bubble.appendChild(who);
+      bubble.appendChild(body);
+    }
 
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = new Date(m.ts).toLocaleString("tr-TR");
 
-    wrap.appendChild(bubble);
-    wrap.appendChild(meta);
-    chatEl.appendChild(wrap);
+    row.appendChild(bubble);
+    row.appendChild(meta);
+    chatEl.appendChild(row);
   }
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-function add(role, text) {
-  messages.push({ role, text, ts: new Date().toISOString() });
+function add(role, text, who) {
+  messages.push({ role, text, who, ts: new Date().toISOString() });
   dirty = true;
   render();
 }
@@ -159,10 +201,11 @@ document.getElementById("form").addEventListener("submit", async (e) => {
   if (!text) return;
   msgEl.value = "";
 
-  add("user", text);
+  add("user", text, teacherName());
 
-  const typing = { role:"assistant", text:"…", ts:new Date().toISOString(), _tmp:true };
-  messages.push(typing);
+  const typingId = "typing_" + Date.now();
+  messages.push({ role:"assistant", text:"…", who:"Xavi", ts:new Date().toISOString(), _tmp:typingId });
+  messages.push({ role:"assistant", text:"…", who:"Víctor", ts:new Date().toISOString(), _tmp:typingId });
   render();
 
   try {
@@ -178,19 +221,24 @@ document.getElementById("form").addEventListener("submit", async (e) => {
     });
 
     const data = await res.json().catch(()=> ({}));
-    const idx = messages.indexOf(typing);
-    if (idx >= 0) messages.splice(idx, 1);
+    // remove typing
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]._tmp === typingId) messages.splice(i, 1);
+    }
 
     if (!res.ok) {
-      add("assistant", "Hata: " + (data.detail || data.error || ("HTTP " + res.status)));
+      add("assistant", "Hata: " + (data.detail || data.error || ("HTTP " + res.status)), "Sistem");
       console.error(data);
       return;
     }
-    add("assistant", data.reply || "");
+
+    const parts = splitStudents(data.reply || "");
+    for (const p of parts) add("assistant", p.text, p.who);
   } catch (err) {
-    const idx = messages.indexOf(typing);
-    if (idx >= 0) messages.splice(idx, 1);
-    add("assistant", "Bağlantı hatası. Render URL ve CORS kontrol edin.");
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]._tmp) messages.splice(i, 1);
+    }
+    add("assistant", "Bağlantı hatası. Render URL ve CORS kontrol edin.", "Sistem");
     console.error(err);
   }
 });
@@ -202,11 +250,8 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     sessionId,
     startedAt,
     savedAt: new Date().toISOString(),
-    user: {
-      firstName: firstEl.value.trim(),
-      lastName: lastEl.value.trim()
-    },
-    messages: messages.map(m=>({ role:m.role, text:m.text, ts:m.ts })),
+    user: { firstName: firstEl.value.trim(), lastName: lastEl.value.trim() },
+    messages: messages.map(m=>({ role:m.role, text:m.text, who:m.who, ts:m.ts })),
     pageUrl: location.href,
     userAgent: navigator.userAgent
   };
@@ -234,7 +279,6 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   }
 });
 
-// Browser-native warning on close/refresh
 window.addEventListener("beforeunload", (e) => {
   if (!dirty) return;
   e.preventDefault();
