@@ -7,8 +7,9 @@ import { Readable } from "stream";
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
-// CORS (opsiyonel kilitle)
-// ALLOWED_ORIGINS="https://<user>.github.io,https://<custom-domain>"
+/* =========================
+   CORS – KESİN ÇÖZÜM
+   ========================= */
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map(s => s.trim())
@@ -16,18 +17,32 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
+    if (!origin) return cb(null, true); // Postman / server-to-server
+    if (ALLOWED_ORIGINS.length === 0) return cb(null, true); // debug: allow all
     return cb(null, ALLOWED_ORIGINS.includes(origin));
-  }
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
 }));
 
-// ---- OpenAI
+// ⛔️ BU SATIR ÇOK KRİTİK (preflight)
+app.options("*", cors());
+
+/* =========================
+   OpenAI
+   ========================= */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+if (!OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY missing");
+}
+
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// ---- Drive (Service Account)
+/* =========================
+   Google Drive (Service Account)
+   ========================= */
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
 function getServiceAccountJson() {
@@ -58,13 +73,17 @@ function safeFilePart(s) {
     .slice(0, 60);
 }
 
-app.get("/health", (req, res) => res.json({ ok: true }));
+/* =========================
+   ROUTES
+   ========================= */
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
 
 app.post("/api/chat", async (req, res) => {
   try {
     const { systemPrompt, messages } = req.body || {};
 
-    if (!OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY missing" });
     if (!systemPrompt) return res.status(400).json({ error: "systemPrompt missing" });
     if (!Array.isArray(messages)) return res.status(400).json({ error: "messages missing" });
 
@@ -80,8 +99,10 @@ app.post("/api/chat", async (req, res) => {
       temperature: 0.7
     });
 
-    const reply = completion.choices?.[0]?.message?.content ?? "";
-    res.json({ reply, ts: new Date().toISOString() });
+    res.json({
+      reply: completion.choices?.[0]?.message?.content ?? "",
+      ts: new Date().toISOString()
+    });
   } catch (err) {
     console.error("CHAT ERROR:", err?.response?.data || err);
     res.status(500).json({
@@ -98,7 +119,9 @@ app.post("/api/save", async (req, res) => {
 
     if (!DRIVE_FOLDER_ID) return res.status(500).json({ error: "DRIVE_FOLDER_ID missing" });
     if (!sessionId) return res.status(400).json({ error: "sessionId missing" });
-    if (!user?.firstName || !user?.lastName) return res.status(400).json({ error: "user missing" });
+    if (!user?.firstName || !user?.lastName) {
+      return res.status(400).json({ error: "user missing" });
+    }
 
     const first = safeFilePart(user.firstName);
     const last = safeFilePart(user.lastName);
@@ -108,10 +131,17 @@ app.post("/api/save", async (req, res) => {
     const drive = getDriveClient();
     const content = JSON.stringify(payload, null, 2);
 
-    const media = { mimeType: "application/json", body: Readable.from([content]) };
+    const media = {
+      mimeType: "application/json",
+      body: Readable.from([content])
+    };
 
     const file = await drive.files.create({
-      requestBody: { name: fileName, parents: [DRIVE_FOLDER_ID], mimeType: "application/json" },
+      requestBody: {
+        name: fileName,
+        parents: [DRIVE_FOLDER_ID],
+        mimeType: "application/json"
+      },
       media,
       fields: "id,name"
     });
@@ -126,5 +156,10 @@ app.post("/api/save", async (req, res) => {
   }
 });
 
+/* =========================
+   START
+   ========================= */
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("Server running on", PORT));
+app.listen(PORT, () => {
+  console.log("✅ Server running on port", PORT);
+});
