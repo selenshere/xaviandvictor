@@ -29,16 +29,18 @@ const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 function extractDriveId(value) {
   if (!value) return "";
-  const s = String(value).trim();
+  let s = String(value).trim();
   const m = s.match(/folders\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : s;
+  if (m) return m[1];
+  // strip query params if someone pasted ?usp=...
+  s = s.split("?")[0].split("&")[0].trim();
+  return s;
 }
 const DRIVE_FOLDER_ID = extractDriveId(process.env.DRIVE_FOLDER_ID);
 
 function getServiceAccountJson() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
-
   if (raw) return JSON.parse(raw);
   if (b64) return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
   throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON_BASE64");
@@ -106,13 +108,13 @@ app.post("/api/save", async (req, res) => {
 
     const drive = getDriveClient();
 
-    // verify folder exists
+    // verify folder exists & accessible
     try {
       await drive.files.get({ fileId: DRIVE_FOLDER_ID, fields: "id,name" });
     } catch {
       return res.status(500).json({
         error: "save_failed",
-        detail: "Folder not found OR not shared with service account. Set DRIVE_FOLDER_ID to ONLY the folder id (or a full folders/<id> URL)."
+        detail: "Folder not found OR not shared with service account. Put ONLY the folder id in DRIVE_FOLDER_ID (no ?usp=...) and share folder with service account as Editor."
       });
     }
 
