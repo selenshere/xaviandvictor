@@ -7,6 +7,7 @@ import { Readable } from "stream";
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
+// CORS
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map(s => s.trim())
@@ -18,42 +19,40 @@ app.use(cors({
     if (ALLOWED_ORIGINS.length === 0) return cb(null, true);
     return cb(null, ALLOWED_ORIGINS.includes(origin));
   },
-  methods: ["GET","POST","OPTIONS"],
+  methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"]
 }));
 app.options("*", cors());
 
+// OpenAI
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// Drive (OAuth)
 function extractDriveId(value) {
   if (!value) return "";
   let s = String(value).trim();
   const m = s.match(/folders\/([a-zA-Z0-9_-]+)/);
   if (m) return m[1];
-  // strip query params if someone pasted ?usp=...
   s = s.split("?")[0].split("&")[0].trim();
   return s;
 }
 const DRIVE_FOLDER_ID = extractDriveId(process.env.DRIVE_FOLDER_ID);
 
-function getServiceAccountJson() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
-  if (raw) return JSON.parse(raw);
-  if (b64) return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-  throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON_BASE64");
-}
+function getDriveClientOAuth() {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
 
-function getDriveClient() {
-  const sa = getServiceAccountJson();
-  const auth = new google.auth.JWT({
-    email: sa.client_email,
-    key: sa.private_key,
-    scopes: ["https://www.googleapis.com/auth/drive"]
-  });
-  return google.drive({ version: "v3", auth });
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("Missing GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN");
+  }
+
+  const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+
+  return google.drive({ version: "v3", auth: oauth2 });
 }
 
 function safeFilePart(s) {
@@ -76,6 +75,7 @@ app.post("/api/chat", async (req, res) => {
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
+        // ✅ persona kilidi
         { role: "system", content: systemPrompt },
         ...messages.map(m => ({
           role: m.role === "assistant" ? "assistant" : "user",
@@ -87,8 +87,8 @@ app.post("/api/chat", async (req, res) => {
 
     res.json({ reply: completion.choices?.[0]?.message?.content ?? "", ts: new Date().toISOString() });
   } catch (err) {
-    console.error("CHAT ERROR:", err?.response?.data || err);
-    res.status(500).json({ error: "chat_failed", detail: err?.response?.data?.error?.message || err?.message || String(err) });
+    console.error("CHAT ERROR:", err);
+    res.status(500).json({ error: "chat_failed", detail: err?.message || String(err) });
   }
 });
 
@@ -106,17 +106,13 @@ app.post("/api/save", async (req, res) => {
     const stamp = safeFilePart((savedAt || new Date().toISOString()).replace(/[:.]/g, "-"));
     const fileName = `${first}_${last}_${stamp}_${sessionId}.json`;
 
-    const drive = getDriveClient();
+    const drive = getDriveClientOAuth();
 
-    // verify folder exists & accessible
-    try {
-      await drive.files.get({ fileId: DRIVE_FOLDER_ID, fields: "id,name" });
-    } catch {
-      return res.status(500).json({
-        error: "save_failed",
-        detail: "Folder not found OR not shared with service account. Put ONLY the folder id in DRIVE_FOLDER_ID (no ?usp=...) and share folder with service account as Editor."
-      });
-    }
+    // klasör erişimi kontrol
+    await drive.files.get({
+      fileId: DRIVE_FOLDER_ID,
+      fields: "id,name"
+    });
 
     const content = JSON.stringify(payload, null, 2);
     const media = { mimeType: "application/json", body: Readable.from([content]) };
@@ -129,8 +125,8 @@ app.post("/api/save", async (req, res) => {
 
     res.json({ ok: true, fileId: file.data.id, fileName: file.data.name });
   } catch (err) {
-    console.error("SAVE ERROR:", err?.response?.data || err);
-    res.status(500).json({ error: "save_failed", detail: err?.response?.data?.error?.message || err?.message || String(err) });
+    console.error("SAVE ERROR:", err);
+    res.status(500).json({ error: "save_failed", detail: err?.message || String(err) });
   }
 });
 
